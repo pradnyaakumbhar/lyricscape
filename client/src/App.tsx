@@ -1,122 +1,137 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useMemo, useState } from "react";
+import Constellation from "./components/Constellation";
+import LoginScreen from "./components/LoginScreen";
+import Player from "./components/Player";
+import { useNowPlaying } from "./hooks/useNowPlaying";
+import { useSpotifyPlayer } from "./hooks/useSpotifyPlayer";
+import { parseLRC } from "./lib/lrc";
 
-function App() {
-  const [count, setCount] = useState(0)
+type LyricsState = "idle" | "loading" | "found" | "missing";
+
+export default function App() {
+  const { status, data, getPositionMs } = useNowPlaying();
+  const spotify = useSpotifyPlayer();
+
+  const [synced, setSynced] = useState<string | null>(null);
+  const [lyricsState, setLyricsState] = useState<LyricsState>("idle");
+
+  const authFailed = new URLSearchParams(window.location.search).get("auth") === "failed";
+  const track = data?.track ?? null;
+
+  // Fetch synced lyrics whenever the track changes.
+  useEffect(() => {
+    if (!track) { setSynced(null); setLyricsState("idle"); return; }
+    const ctrl = new AbortController();
+    setLyricsState("loading");
+    setSynced(null);
+    const q = new URLSearchParams({
+      title: track.title,
+      artist: track.artist.split(", ")[0],
+      album: track.album,
+      duration: String(track.durationMs / 1000),
+    });
+    fetch(`/api/lyrics?${q}`, { signal: ctrl.signal, credentials: "include" })
+      .then((r) => r.json())
+      .then((j: { synced: string | null }) => {
+        setSynced(j.synced);
+        setLyricsState(j.synced ? "found" : "missing");
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [track?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const lines = useMemo(() => (synced ? parseLRC(synced) : []), [synced]);
+
+  // Prefer the SDK's position (fires on state change events) over polling when available.
+  const getPos = useMemo<() => number>(() => {
+    if (spotify.playerState && !spotify.playerState.paused) {
+      const { position, paused } = spotify.playerState;
+      const capturedAt = performance.now();
+      return () => {
+        const elapsed = paused ? 0 : performance.now() - capturedAt;
+        return position + elapsed;
+      };
+    }
+    return getPositionMs;
+  }, [spotify.playerState, getPositionMs]);
+
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white/40 text-sm">
+        Connecting…
+      </div>
+    );
+  }
+
+  if (status === "signed-out") {
+    return <LoginScreen failed={authFailed} />;
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#05050a]">
+      {/* Constellation stage */}
+      <div
+        className="relative w-full max-w-5xl"
+        style={{
+          aspectRatio: "16 / 9",
+          borderRadius: "14px",
+          background: "#000",
+          overflow: "hidden",
+          boxShadow: `
+            inset 0 0 0 1px hsla(268,90%,62%,0.55),
+            inset 0 0 38px -4px hsl(268,90%,62%),
+            0 0 60px -20px hsl(268,90%,62%)
+          `,
+        }}
+      >
+        <Constellation lines={lines} getPositionMs={getPos} hue={268} />
 
-      <div className="ticks"></div>
+        {/* Status overlay */}
+        {!track && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm text-center px-6">
+            Play something on Spotify on any device.
+          </div>
+        )}
+        {track && lyricsState === "loading" && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
+            Finding lyrics…
+          </div>
+        )}
+        {track && lyricsState === "missing" && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
+            No synced lyrics found for this track.
+          </div>
+        )}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* Player controls */}
+        {track && (
+          <Player
+            track={track}
+            playerState={spotify.playerState}
+            getPositionMs={getPositionMs}
+            onTogglePlay={spotify.togglePlay}
+            onNext={spotify.nextTrack}
+            onPrev={spotify.prevTrack}
+            onSeek={spotify.seek}
+          />
+        )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {/* HUD — track name + disconnect */}
+        {track && (
+          <div className="absolute top-3 left-4 right-4 flex justify-between items-center text-[11px] uppercase tracking-widest text-white/30">
+            <span>{track.title} · {track.artist}</span>
+            <button
+              className="hover:text-white/60 transition"
+              onClick={async () => {
+                await fetch("/auth/logout", { method: "POST", credentials: "include" });
+                window.location.href = "/";
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
-
-export default App

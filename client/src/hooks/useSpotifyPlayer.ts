@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 
+export interface SdkTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  durationMs: number;
+  image: string | null;
+}
+
 export interface PlayerState {
   paused: boolean;
   position: number; // ms
   duration: number; // ms
   trackId: string | null;
+  track: SdkTrack | null;
 }
 
 export interface SpotifyPlayer {
@@ -70,6 +80,10 @@ export function useSpotifyPlayer(): SpotifyPlayer {
     let player: SpotifyPlayerInstance | null = null;
 
     const init = async () => {
+      // Check if Premium is available before loading the SDK.
+      const tokenRes = await fetch("/api/spotify/token", { credentials: "include" });
+      if (!tokenRes.ok) return;
+
       await loadSDK();
 
       player = new window.Spotify.Player({
@@ -84,13 +98,7 @@ export function useSpotifyPlayer(): SpotifyPlayer {
         const { device_id } = data as { device_id: string };
         setDeviceId(device_id);
         setReady(true);
-        // Transfer playback to this browser device automatically.
-        fetch("/api/player/transfer", {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId: device_id }),
-        });
+        // Only transfer if the user explicitly wants to — don't auto-steal playback.
       });
 
       player.addListener("not_ready", () => {
@@ -104,21 +112,38 @@ export function useSpotifyPlayer(): SpotifyPlayer {
           paused: boolean;
           position: number;
           duration: number;
-          track_window: { current_track: { id: string } };
+          track_window: {
+            current_track: {
+              id: string;
+              name: string;
+              duration_ms: number;
+              artists: Array<{ name: string }>;
+              album: { name: string; images: Array<{ url: string }> };
+            };
+          };
         };
+        const ct = s.track_window?.current_track;
         setPlayerState({
           paused: s.paused,
           position: s.position,
           duration: s.duration,
-          trackId: s.track_window?.current_track?.id ?? null,
+          trackId: ct?.id ?? null,
+          track: ct ? {
+            id: ct.id,
+            title: ct.name,
+            artist: (ct.artists ?? []).map((a) => a.name).join(", "),
+            album: ct.album?.name ?? "",
+            durationMs: ct.duration_ms,
+            image: ct.album?.images?.[1]?.url ?? ct.album?.images?.[0]?.url ?? null,
+          } : null,
         });
       });
 
-      await player.connect();
-      playerRef.current = player;
+      const connected = await player.connect();
+      if (connected) playerRef.current = player;
     };
 
-    init().catch(console.error);
+    init().catch(() => { /* non-Premium account: SDK unavailable */ });
 
     return () => {
       player?.disconnect();

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import BorderGlow from "./components/BorderGlow";
 import Constellation from "./components/Constellation";
 import LoginScreen from "./components/LoginScreen";
 import Player from "./components/Player";
@@ -14,9 +15,25 @@ export default function App() {
 
   const [synced, setSynced] = useState<string | null>(null);
   const [lyricsState, setLyricsState] = useState<LyricsState>("idle");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   const authFailed = new URLSearchParams(window.location.search).get("auth") === "failed";
-  const track = data?.track ?? null;
+  // SDK track takes priority (accurate when our browser is the playback device)
+  const track = spotify.playerState?.track ?? data?.track ?? null;
 
   // Fetch synced lyrics whenever the track changes.
   useEffect(() => {
@@ -68,69 +85,83 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#05050a]">
-      {/* Constellation stage */}
+    <div className="h-screen w-screen bg-[#05050a] overflow-hidden">
+      {/* Constellation stage — full screen */}
       <div
-        className="relative w-full max-w-5xl"
-        style={{
-          aspectRatio: "16 / 9",
-          borderRadius: "14px",
-          background: "#000",
-          overflow: "hidden",
-          boxShadow: `
-            inset 0 0 0 1px hsla(268,90%,62%,0.55),
-            inset 0 0 38px -4px hsl(268,90%,62%),
-            0 0 60px -20px hsl(268,90%,62%)
-          `,
-        }}
+        id="stage"
+        className="relative w-full h-full"
+        style={{ background: "#000" }}
       >
-        <Constellation lines={lines} getPositionMs={getPos} hue={268} />
+        {/* All content */}
+        <div className="absolute inset-0" style={{ zIndex: 30 }}>
+          <Constellation lines={lines} getPositionMs={getPos} hue={268} />
 
-        {/* Status overlay */}
-        {!track && (
-          <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm text-center px-6">
-            Play something on Spotify on any device.
-          </div>
-        )}
-        {track && lyricsState === "loading" && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
-            Finding lyrics…
-          </div>
-        )}
-        {track && lyricsState === "missing" && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
-            No synced lyrics found for this track.
-          </div>
-        )}
+          {/* Status overlay */}
+          {!track && (
+            <div className="absolute inset-0 flex items-center justify-center text-white/40 text-sm text-center px-6">
+              Play something on Spotify on any device.
+            </div>
+          )}
+          {track && lyricsState === "loading" && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
+              Finding lyrics…
+            </div>
+          )}
+          {track && lyricsState === "missing" && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/30 text-xs">
+              No synced lyrics found for this track.
+            </div>
+          )}
 
-        {/* Player controls */}
-        {track && (
-          <Player
-            track={track}
-            playerState={spotify.playerState}
-            getPositionMs={getPositionMs}
-            onTogglePlay={spotify.togglePlay}
-            onNext={spotify.nextTrack}
-            onPrev={spotify.prevTrack}
-            onSeek={spotify.seek}
-          />
-        )}
+          {/* Player controls */}
+          {track && (
+            <Player
+              track={track}
+              playerState={spotify.playerState}
+              getPositionMs={getPos}
+              onTogglePlay={spotify.togglePlay}
+              onNext={spotify.nextTrack}
+              onPrev={spotify.prevTrack}
+              onSeek={spotify.seek}
+            />
+          )}
 
-        {/* HUD — track name + disconnect */}
-        {track && (
+          {/* Border glow — rendered last so it sits above the constellation canvas */}
+          <BorderGlow hue={268} />
+
+          {/* HUD — track name + controls (always visible when signed in) */}
           <div className="absolute top-3 left-4 right-4 flex justify-between items-center text-[11px] uppercase tracking-widest text-white/30">
-            <span>{track.title} · {track.artist}</span>
-            <button
-              className="hover:text-white/60 transition"
-              onClick={async () => {
-                await fetch("/auth/logout", { method: "POST", credentials: "include" });
-                window.location.href = "/";
-              }}
-            >
-              Disconnect
-            </button>
+            <span>{track ? `${track.title} · ${track.artist}` : ""}</span>
+            <div className="flex items-center gap-4">
+              <button
+                className="hover:text-white/60 transition"
+                title={isFullscreen ? "Exit fullscreen (Esc)" : "Enter fullscreen"}
+                onClick={toggleFullscreen}
+              >
+                {isFullscreen ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+                    <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                    <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                  </svg>
+                )}
+              </button>
+              <button
+                className="hover:text-white/60 transition"
+                onClick={async () => {
+                  await fetch(`${import.meta.env.VITE_SERVER_URL}/auth/logout`, { method: "POST", credentials: "include" });
+                  window.location.href = "/";
+                }}
+              >
+                Disconnect
+              </button>
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

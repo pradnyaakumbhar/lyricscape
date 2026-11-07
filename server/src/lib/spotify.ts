@@ -8,6 +8,8 @@ export const SCOPES = [
   "user-read-playback-state",
   "user-modify-playback-state",
   "streaming",
+  "user-read-email",
+  "user-read-private",
 ].join(" ");
 
 // ── PKCE helpers ─────────────────────────────────────────────────────────────

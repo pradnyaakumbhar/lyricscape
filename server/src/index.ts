@@ -10,12 +10,12 @@ import lyricsRouter from "./routes/lyrics";
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
-const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+const CLIENT_URL = process.env.CLIENT_URL ?? "http://127.0.0.1:5173";
 
 app.use(
   cors({
-    origin: CLIENT_URL,
-    credentials: true, // allow cookies cross-origin in dev
+    origin: [CLIENT_URL, "http://127.0.0.1:5173", "http://localhost:5173"],
+    credentials: true,
   }),
 );
 app.use(express.json());

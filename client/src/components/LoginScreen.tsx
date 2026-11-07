@@ -17,7 +17,7 @@ export default function LoginScreen({ failed }: { failed?: boolean }) {
       )}
 
       <a
-        href="/auth/login"
+        href={`${import.meta.env.VITE_SERVER_URL}/auth/login`}
         className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#1DB954] text-black font-semibold text-sm hover:brightness-110 transition"
       >
         <SpotifyLogo />

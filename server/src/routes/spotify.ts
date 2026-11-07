@@ -8,7 +8,7 @@ const router = Router();
 router.get("/now-playing", requireAuth, async (_req, res) => {
   const token: string = res.locals.token;
 
-  const upstream: globalThis.Response = await spotifyFetch("/me/player/currently-playing", token);
+  const upstream: globalThis.Response = await spotifyFetch("/me/player?additional_types=track", token);
 
   if (upstream.status === 429) {
     res.set("Retry-After", upstream.headers.get("Retry-After") ?? "5");
@@ -49,6 +49,18 @@ router.get("/now-playing", requireAuth, async (_req, res) => {
 // The SDK needs it directly (it cannot go through a cookie proxy).
 router.get("/token", requireAuth, (_req, res) => {
   res.json({ accessToken: res.locals.token });
+});
+
+// GET /api/spotify/me — debug: returns the current user's Spotify profile
+router.get("/me", requireAuth, async (_req, res) => {
+  const token: string = res.locals.token;
+  const upstream = await spotifyFetch("/me", token);
+  const text = await upstream.text();
+  try {
+    res.json(JSON.parse(text));
+  } catch {
+    res.status(upstream.status).json({ raw: text });
+  }
 });
 
 export default router;
